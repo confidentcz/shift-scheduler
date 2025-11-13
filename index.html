@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
+<title>排班表</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#fff; --primary:#2D9CDB; --muted:#7f8c8d;
+    --day:#e8f6f3; --day-text:#16a085;
+    --night:#fff6e6; --night-text:#d35400;
+    --after:#f4ecf7; --after-text:#8e44ad;
+    --off:#e8f8f5; --off-text:#27ae60;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family: "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial;
+    background:linear-gradient(135deg,#f0f3f8 0%, #dfeef7 100%); color:#222; padding:16px;
+  }
+  .wrap{max-width:1000px;margin:0 auto;}
+  .card{background:var(--card); border-radius:var(--radius); box-shadow:0 10px 30px rgba(17,25,39,0.08); overflow:hidden}
+  header{background:linear-gradient(90deg,var(--primary),#1b6ea8); color:#fff; padding:20px}
+  header h1{margin:0;font-size:1.25rem}
+  header p{margin:6px 0 0;opacity:.95;font-size:.9rem}
+  .content{padding:14px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px}
+  .control {flex:1 1 190px; min-width:160px}
+  label{display:block;font-weight:600;margin-bottom:6px;color:#34495e;font-size:.9rem}
+  input[type="date"], input[type="number"], select, input[type="text"]{
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e3e7ea; font-size:15px;
+  }
+  .btn {display:inline-block;padding:10px 12px;border-radius:10px;background:var(--primary);color:#fff;font-weight:700;border:none;cursor:pointer}
+  .btn.alt{background:#fff;border:1px solid #e3e7ea;color:#34495e}
+  .small{font-size:.85rem;padding:8px 10px;border-radius:8px}
+  .section{margin-top:12px}
+  .cycle-editor{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .shift-pill{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;background:#f3f6f8;border:1px solid #e6eef6}
+  .shift-label{font-weight:700;font-size:.92rem}
+  .pill-actions{display:flex;gap:6px}
+  .icon-btn{border:none;background:transparent;padding:6px;border-radius:6px;cursor:pointer}
+  .icon-btn:active{transform:translateY(1px)}
+  .add-input{display:flex;gap:8px;align-items:center}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .legend .item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:#fbfdff;border:1px solid #eef6fb}
+  .legend .sw{width:18px;height:18px;border-radius:6px}
+  /* schedule table */
+  .table-wrap{overflow:auto;margin-top:12px;border-radius:10px}
+  table.schedule{width:100%;border-collapse:collapse;min-width:720px}
+  table.schedule thead th{position:sticky;top:0;background:#1b6ea8;color:#fff;padding:10px;text-align:center;font-weight:700}
+  table.schedule th, table.schedule td{padding:8px;border:1px solid #e9eef3;text-align:center}
+  table.schedule tbody tr.week-row{background:#fff}
+  .date-small{display:block;font-size:12px;color:var(--muted)}
+  .cell-shift{display:inline-block;margin-top:6px;padding:6px 8px;border-radius:10px;font-weight:700;min-width:66px}
+  .day-shift{background:var(--day);color:var(--day-text)}
+  .night-shift{background:var(--night);color:var(--night-text)}
+  .after-shift{background:var(--after);color:var(--after-text)}
+  .off-shift{background:var(--off);color:var(--off-text)}
+  .cell-override{box-shadow:0 2px 6px rgba(0,0,0,0.06);border:1px dashed rgba(0,0,0,0.06)}
+  .controls-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .summary{margin-top:10px;padding:10px;background:#f6fbff;border-left:4px solid var(--primary);border-radius:8px}
+  @media (max-width:780px){
+    .add-input{width:100%}
+    .small{width:100%}
+    table.schedule{min-width:650px}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header>
+        <h1>护士排班表（零依赖）</h1>
+        <p>编辑轮转 → 生成每行 7 天的周视图，手机可用。点击格子编辑 / 恢复自动；设置保存到本机。</p>
+      </header>
+
+      <div class="content">
+        <div class="controls">
+          <div class="control">
+            <label for="startDate">起始日期（排到该日为第 1 天）</label>
+            <input type="date" id="startDate">
+          </div>
+
+          <div class="control">
+            <label for="startShift">起始班次（用于对齐）</label>
+            <select id="startShift"></select>
+          </div>
+
+          <div class="control">
+            <label for="daysCount">生成天数（最少7天）</label>
+            <input type="number" id="daysCount" min="7" max="365" value="28">
+          </div>
+
+          <div style="flex:0 0 140px;">
+            <label>&nbsp;</label>
+            <button class="btn" id="generateBtn">生成排班</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <label style="margin-bottom:6px;display:block">轮转序列（可上下移动 / 编辑 / 删除 / 添加）</label>
+          <div id="cycleEditor" class="cycle-editor" aria-live="polite"></div>
+
+          <div class="controls-row">
+            <div class="add-input">
+              <input id="newShiftName" type="text" placeholder="新班次名称（例如：白班）">
+              <button class="btn alt small" id="addShiftBtn">添加班次</button>
+            </div>
+            <button class="btn alt small" id="saveBtn">保存当前配置</button>
+            <button class="btn alt small" id="clearOverridesBtn">清空所有覆盖</button>
+            <button class="btn small" id="exportCsvBtn">导出 CSV</button>
+          </div>
+
+          <div class="legend" aria-hidden="true" style="margin-top:10px">
+            <div class="item"><div class="sw" style="background:var(--day)"></div><div>白班</div></div>
+            <div class="item"><div class="sw" style="background:var(--night)"></div><div>夜班</div></div>
+            <div class="item"><div class="sw" style="background:var(--after)"></div><div>下夜班</div></div>
+            <div class="item"><div class="sw" style="background:var(--off)"></div><div>休息</div></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="table-wrap" id="tableWrap"></div>
+          <div id="stats" class="summary" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/*
+  说明：
+  - 存储到 localStorage（键值：shift_cycle, shift_overrides, shift_startDate, shift_daysCount）
+  - 单元格点击/双击会弹出 prompt（手机友好）
+  - 覆盖值留空则视为“恢复自动轮转”
+*/
+
+(function(){
+  const LS_KEYS = {
+    CYCLE: 'shift_cycle_v1',
+    OVERRIDES: 'shift_overrides_v1',
+    START_DATE: 'shift_startDate_v1',
+    DAYS: 'shift_daysCount_v1',
+    START_SHIFT: 'shift_startShift_v1'
+  };
+
+  // 默认轮转
+  let cycle = ['白班','夜班','下夜班','休息'];
+  let overrides = {}; // { 'YYYY-MM-DD': '班次名' }  空表示无覆盖
+  let startDate = null;
+  let daysCount = 28;
+  let startShift = '白班';
+
+  // elements
+  const startDateEl = document.getElementById('startDate');
+  const daysCountEl = document.getElementById('daysCount');
+  const cycleEditorEl = document.getElementById('cycleEditor');
+  const newShiftNameEl = document.getElementById('newShiftName');
+  const addShiftBtn = document.getElementById('addShiftBtn');
+  const generateBtn = document.getElementById('generateBtn');
+  const tableWrap = document.getElementById('tableWrap');
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const clearOverridesBtn = document.getElementById('clearOverridesBtn');
+  const startShiftEl = document.getElementById('startShift');
+  const statsEl = document.getElementById('stats');
+
+  // init
+  function init(){
+    loadFromStorage();
+    // set defaults
+    if(!startDate){
+      const today = new Date(); startDate = isoDate(today);
+      saveToStorage(LS_KEYS.START_DATE, startDate);
+    }
+    startDateEl.value = startDate;
+    daysCountEl.value = daysCount;
+    buildStartShiftSelect();
+    startShiftEl.value = startShift;
+
+    renderCycleEditor();
+    attachHandlers();
+    renderSchedule(); // initial
+  }
+
+  function buildStartShiftSelect(){
+    startShiftEl.innerHTML = '';
+    cycle.forEach(s => {
+      const opt = document.createElement('option'); opt.value=s; opt.textContent=s;
+      startShiftEl.appendChild(opt);
+    });
+    // if startShift not in cycle, add it
+    if(!cycle.includes(startShift)){
+      cycle.push(startShift);
+      renderCycleEditor();
+      // also re-add to select
+      const opt = document.createElement('option'); opt.value=startShift; opt.textContent=startShift;
+      startShiftEl.appendChild(opt);
+    }
+  }
+
+  function loadFromStorage(){
+    try{
+      const c = localStorage.getItem(LS_KEYS.CYCLE);
+      if(c) cycle = JSON.parse(c);
+      const o = localStorage.getItem(LS_KEYS.OVERRIDES);
+      if(o) overrides = JSON.parse(o);
+      const sd = localStorage.getItem(LS_KEYS.START_DATE);
+      if(sd) startDate = sd;
+      const d = localStorage.getItem(LS_KEYS.DAYS);
+      if(d) daysCount = Number(d) || daysCount;
+      const ss = localStorage.getItem(LS_KEYS.START_SHIFT);
+      if(ss) startShift = ss;
+    }catch(e){ console.warn('读取存储失败',e) }
+  }
+
+  function saveToStorage(key, val){
+    try{
+      localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
+    }catch(e){ console.warn('保存失败',e) }
+  }
+
+  function attachHandlers(){
+    addShiftBtn.addEventListener('click', ()=>{
+      const name = newShiftNameEl.value.trim();
+      if(!name) { alert('请输入班次名称'); return; }
+      cycle.push(name);
+      renderCycleEditor();
+      newShiftNameEl.value='';
+      buildStartShiftSelect();
+      saveToStorage(LS_KEYS.CYCLE, cycle);
+    });
+
+    generateBtn.addEventListener('click', ()=>{
+      startDate = startDateEl.value;
+      daysCount = Math.max(7, Number(daysCountEl.value) || 7);
+      startShift = startShiftEl.value || cycle[0];
+      saveToStorage(LS_KEYS.START_DATE, startDate);
+      saveToStorage(LS_KEYS.DAYS, daysCount);
+      saveToStorage(LS_KEYS.START_SHIFT, startShift);
+      renderSchedule();
+    });
+
+    exportCsvBtn.addEventListener('click', exportCsv);
+    saveBtn.addEventListener('click', ()=>{
+      saveToStorage(LS_KEYS.CYCLE, cycle);
+      saveToStorage(LS_KEYS.OVERRIDES, overrides);
+      saveToStorage(LS_KEYS.START_DATE, startDateEl.value);
+      saveToStorage(LS_KEYS.DAYS, daysCountEl.value);
+      saveToStorage(LS_KEYS.START_SHIFT, startShiftEl.value);
+      alert('已保存到本地（浏览器）');
+    });
+
+    clearOverridesBtn.addEventListener('click', ()=>{
+      if(confirm('确定清除所有手动覆盖（不可恢复）？')) {
+        overrides = {};
+        saveToStorage(LS_KEYS.OVERRIDES, overrides);
+        renderSchedule();
+      }
+    });
+
+    // keep controls reactive: when cycle changes, update startShift options
+    startShiftEl.addEventListener('change', ()=> {
+      startShift = startShiftEl.value;
+      saveToStorage(LS_KEYS.START_SHIFT, startShift);
+    });
+  }
+
+  // render cycle editor (each pill has edit/up/down/delete)
+  function renderCycleEditor(){
+    cycleEditorEl.innerHTML = '';
+    cycle.forEach((s, idx) => {
+      const pill = document.createElement('div'); pill.className='shift-pill';
+      // color sample
+      const color = document.createElement('div'); color.style.width='10px'; color.style.height='10px'; color.style.borderRadius='6px';
+      // choose color by index mapping to default names if match
+      if(/白班/.test(s)) color.style.background='var(--day)';
+      else if(/夜班/.test(s)) color.style.background='var(--night)';
+      else if(/下夜/.test(s)) color.style.background='var(--after)';
+      else if(/休息/.test(s)) color.style.background='var(--off)';
+      else color.style.background='#eef6fb';
+
+      const label = document.createElement('div'); label.className='shift-label'; label.textContent = s;
+      // editable on click
+      label.addEventListener('click', ()=> {
+        const nv = prompt('编辑班次名称：', s);
+        if(nv === null) return;
+        const name = nv.trim();
+        if(!name) { alert('名称不能为空'); return; }
+        cycle[idx] = name;
+        renderCycleEditor(); buildStartShiftSelect(); saveToStorage(LS_KEYS.CYCLE, cycle);
+      });
+
+      const actions = document.createElement('div'); actions.className='pill-actions';
+      const up = document.createElement('button'); up.className='icon-btn'; up.title='上移'; up.innerHTML='⬆';
+      up.addEventListener('click', ()=> { if(idx>0){ swap(cycle, idx, idx-1); renderCycleEditor(); buildStartShiftSelect(); saveToStorage(LS_KEYS.CYCLE, cycle); }});
+      const down = document.createElement('button'); down.className='icon-btn'; down.title='下移'; down.innerHTML='⬇';
+      down.addEventListener('click', ()=> { if(idx<cycle.length-1){ swap(cycle, idx, idx+1); renderCycleEditor(); buildStartShiftSelect(); saveToStorage(LS_KEYS.CYCLE, cycle); }});
+      const del = document.createElement('button'); del.className='icon-btn'; del.title='删除'; del.innerHTML='✖';
+      del.addEventListener('click', ()=> {
+        if(confirm('删除班次 "'+s+'" ?')) {
+          cycle.splice(idx,1);
+          renderCycleEditor(); buildStartShiftSelect(); saveToStorage(LS_KEYS.CYCLE, cycle);
+        }
+      });
+
+      actions.appendChild(up); actions.appendChild(down); actions.appendChild(del);
+      pill.appendChild(color); pill.appendChild(label); pill.appendChild(actions);
+      cycleEditorEl.appendChild(pill);
+    });
+  }
+
+  function swap(arr, i, j){ const t=arr[i]; arr[i]=arr[j]; arr[j]=t; }
+
+  // schedule rendering: produce table with weeks (one row = 7 days)
+  function renderSchedule(){
+    // read current controls
+    startDate = startDateEl.value || startDate;
+    daysCount = Math.max(7, Number(daysCountEl.value) || daysCount);
+    startShift = startShiftEl.value || startShift;
+    if(!startDate){ alert('请选择起始日期'); return; }
+
+    // create flat dates list
+    const dates = [];
+    for(let i=0;i<daysCount;i++){
+      const d = addDays(parseDate(startDate), i);
+      dates.push(isoDate(d));
+    }
+
+    // compute index offset: find index in cycle matching startShift
+    let startIndex = cycle.indexOf(startShift);
+    if(startIndex === -1) startIndex = 0;
+
+    // build rows by week (week starts Monday). However user wants "一行七天" similar to calendar.
+    // We'll align rows so first row starts from the startDate (not necessarily Monday). That's simpler & matches requirement: each row contains 7 sequential days.
+    const weeks = [];
+    for(let i=0;i<dates.length;i+=7){
+      weeks.push(dates.slice(i, i+7));
+    }
+
+    // build HTML table
+    const theadWeekdays = ['周一','周二','周三','周四','周五','周六','周日'];
+    let html = '<table class="schedule"><thead><tr><th>周次</th>';
+    for(let w=0; w<7; w++){ html += '<th>'+theadWeekdays[w]+'</th>'; }
+    html += '</tr></thead><tbody>';
+
+    // stats count
+    const counts = {};
+    cycle.forEach(s=> counts[s]=0);
+    // also count overrides not in cycle
+    Object.values(overrides).forEach(v=> { if(v && !(v in counts)) counts[v]=0; });
+
+    weeks.forEach((weekArr, wi)=>{
+      html += '<tr class="week-row"><td style="font-weight:700">第 '+ (wi+1) +' 周</td>';
+      for(let di=0; di<7; di++){
+        const date = weekArr[di];
+        if(!date){
+          html += '<td></td>'; continue;
+        }
+        // shift by position from startDate global index
+        const globalIndex = wi*7 + di;
+        let shift = null;
+        // if override exists for this date, use it
+        if(overrides[date]) { shift = overrides[date]; }
+        else {
+          // use cycle: (startIndex + globalIndex) % cycle.length
+          if(cycle.length > 0) shift = cycle[(startIndex + globalIndex) % cycle.length] || '';
+          else shift = '';
+        }
+
+        if(shift) {
+          if(!(shift in counts)) counts[shift]=0;
+          counts[shift]++;
+        }
+
+        const cls = getShiftClass(shift);
+        const overrideMark = overrides[date] ? 'cell-override' : '';
+        html += `<td data-date="${date}" data-index="${globalIndex}" class="cell ${overrideMark}" style="vertical-align:middle;cursor:pointer" title="点击或双击修改">`;
+        html += `<div class="date-small">${date} ${weekdayName(date)}</div>`;
+        html += `<div class="cell-shift ${cls}">${escapeHtml(shift || '')}</div>`;
+        if(overrides[date]) html += `<div style="font-size:11px;color:#666;margin-top:6px">（已覆盖）</div>`;
+        html += `</td>`;
+      }
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    tableWrap.innerHTML = html;
+
+    // attach event handlers to cells (click to edit; long press not implemented but click works on mobile)
+    tableWrap.querySelectorAll('td.cell').forEach(td=>{
+      td.addEventListener('click', cellClickHandler);
+      td.addEventListener('dblclick', cellDblClickHandler);
+    });
+
+    // render stats
+    let statHtml = '<strong>班次统计（所选天数内）</strong><br/>';
+    Object.keys(counts).forEach(k=> {
+      statHtml += `${k}: ${counts[k]} 天 &nbsp;&nbsp;`;
+    });
+    statsEl.style.display = 'block';
+    statsEl.innerHTML = statHtml;
+  }
+
+  function cellClickHandler(e){
+    // single click -> edit (mobile friendly)
+    const td = e.currentTarget;
+    const date = td.getAttribute('data-date');
+    editCell(date);
+  }
+  function cellDblClickHandler(e){
+    // also allow dblclick
+    const td = e.currentTarget;
+    const date = td.getAttribute('data-date');
+    editCell(date);
+  }
+
+  function editCell(date){
+    const cur = overrides[date] ?? computeAutoShiftForDate(date);
+    const promptMsg = `编辑 ${date} 的班次：\n（留空回到自动轮转；输入新值可自定义覆盖）`;
+    const nv = prompt(promptMsg, cur || '');
+    if(nv === null) return;
+    const val = nv.trim();
+    if(val === ''){
+      // remove override
+      if(overrides[date]){
+        delete overrides[date];
+        saveToStorage(LS_KEYS.OVERRIDES, overrides);
+      }
+    } else {
+      overrides[date] = val;
+      saveToStorage(LS_KEYS.OVERRIDES, overrides);
+      // if new value not in cycle, offer to add?
+      if(!cycle.includes(val)){
+        if(confirm('检测到该班次名不在轮转序列中，是否将其添加到轮转序列？')) {
+          cycle.push(val); saveToStorage(LS_KEYS.CYCLE, cycle); renderCycleEditor(); buildStartShiftSelect();
+        }
+      }
+    }
+    renderSchedule();
+  }
+
+  function computeAutoShiftForDate(dateIso){
+    // compute index distance from startDate
+    const sd = parseDate(startDate);
+    const d = parseDate(dateIso);
+    const diffDays = Math.round((d - sd) / (24*3600*1000));
+    let startIndex = cycle.indexOf(startShift);
+    if(startIndex === -1) startIndex = 0;
+    if(cycle.length === 0) return '';
+    return cycle[(startIndex + diffDays) % cycle.length];
+  }
+
+  // utility format
+  function isoDate(d){
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+  function parseDate(s){ return new Date(s + 'T00:00:00'); }
+  function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function weekdayName(iso){
+    const d = parseDate(iso).getDay(); // 0 Sun
+    return ['周日','周一','周二','周三','周四','周五','周六'][d];
+  }
+  function getShiftClass(shift){
+    if(!shift) return '';
+    if(/白/.test(shift)) return 'day-shift';
+    if(/夜/.test(shift) && !/下/.test(shift)) return 'night-shift';
+    if(/下夜/.test(shift) || /下/.test(shift)) return 'after-shift';
+    if(/休/.test(shift) || /off/i.test(shift)) return 'off-shift';
+    return '';
+  }
+  function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function exportCsv(){
+    // build CSV of weeks (first column Week, then Mon..Sun)
+    const days = [];
+    for(let i=0;i<Number(daysCountEl.value || daysCount); i++){
+      days.push( isoDate( addDays(parseDate(startDateEl.value || startDate), i) ) );
+    }
+    const rows = [];
+    // header
+    rows.push(['周次','周一','周二','周三','周四','周五','周六','周日']);
+    for(let i=0;i<days.length;i+=7){
+      const week = days.slice(i,i+7);
+      const row = [ `第 ${Math.floor(i/7)+1} 周` ];
+      for(let j=0;j<7;j++){
+        const dt = week[j];
+        if(!dt){ row.push(''); continue; }
+        const shift = overrides[dt] ?? computeAutoShiftForDate(dt);
+        row.push(`${dt} ${shift||''}`);
+      }
+      rows.push(row);
+    }
+    const csv = rows.map(r=> r.map(cell => `"${(cell||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download = 'schedule.csv'; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+  }
+
+  // init and render once
+  init();
+
+})();
+</script>
+</body>
+</html>
